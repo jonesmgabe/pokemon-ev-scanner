@@ -1,0 +1,19 @@
+{
+  "min_grade": 1,
+  "max_grade": 8,
+  "max_pop": 1000,
+  "min_discount_pct": 25,
+  "min_fair_value": 15,
+  "min_comps": 2,
+  "comp_max_age_days": 180,
+  "comp_sample": 8,
+  "request_delay_s": 1.5,
+  "pricecharting_condition_ids": [9, 10, 13, 14, 15, 16, 3, 2],
+  "grader_guide_haircut": {"PSA": 1.0, "BGS": 0.9, "SGC": 0.85, "CGC": 0.8, "TAG": 0.75, "ACE": 0.6, "OTHER": 0.6},
+  "ebay_watchlist": [
+    "https://www.pricecharting.com/game/pokemon-base-set/charizard-4",
+    "https://www.pricecharting.com/game/pokemon-base-set/blastoise-2",
+    "https://www.pricecharting.com/game/pokemon-base-set/venusaur-15",
+    "https://www.pricecharting.com/game/pokemon-evolving-skies/umbreon-vmax-215"
+  ]
+}
