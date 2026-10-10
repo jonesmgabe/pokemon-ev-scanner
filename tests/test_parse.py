@@ -6,7 +6,7 @@ class T(unittest.TestCase):
     def test_label(self): self.assertEqual(grade_from_label("Graded 7"), 7.0)
     def test_ebay(self): self.assertEqual(parse_grade("Charizard PSA 7 NM Base"), ("PSA", 7.0))
     def test_fv(self):
-        prod = {"guide": {"7": 100.0}, "pop": {"psa": [0]*6 + [12, 0, 0, 0]}, "comps": {"Grade 7": [
+        prod = {"guide": {"Grade 7": 100.0}, "pop": {"psa": [0]*6 + [12, 0, 0, 0]}, "comps": {"Grade 7": [
             {"date": "2026-01-01", "title": "X PSA 7", "price": 80}, {"date": "2026-01-02", "title": "X PSA 7", "price": 90},
             {"date": "2026-01-03", "title": "X CGC 7", "price": 50}]}}
         self.assertEqual(fair_value(prod, 7.0, "PSA", CFG)[0], 85)
