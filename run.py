@@ -13,15 +13,15 @@ ROOT = Path(__file__).resolve().parent
 ET = ZoneInfo("America/New_York")
 
 
-def evaluate(src, card, set_, grader, grade, price, link, prod, cfg, extra=None):
+def evaluate(src, card, set_, grader, grade, price, link, prod, cfg, extra=None, variant=""):
     if grade is None or not (cfg["min_grade"] <= grade <= cfg["max_grade"]): return None
-    fv, basis, ncomps = pcm.fair_value(prod, grade, grader, cfg)
+    fv, basis, ncomps = pcm.fair_value(prod, grade, grader, cfg, variant)
     if not fv or fv < cfg["min_fair_value"]: return None
-    pop = pcm.pop_for(prod, grade, grader)
+    pop = pcm.pop_for(prod, grade, grader, variant)
     if pop is not None and pop > cfg["max_pop"]: return None
     disc = round(100 * (1 - price / fv), 1)
     item = {"id": hashlib.sha1(f"{src}|{link}|{price}".encode()).hexdigest()[:16], "source": src, "card": card, "set": set_,
-            "grader": grader or "?", "grade": grade, "pop": pop, "list_price": price, "fair_value": fv,
+            "grader": grader or "?", "grade": grade, "variant": variant, "pop": pop, "list_price": price, "fair_value": fv,
             "discount_pct": disc, "confidence": basis.split(":")[0], "fair_value_basis": basis, "comps_used": ncomps, "link": link}
     item.update(extra or {})
     return item if disc >= cfg["min_discount_pct"] else None
@@ -42,7 +42,7 @@ def scan(cfg):
                     if not d["product_url"] or "InStock" not in d["availability"]: continue
                     prod = pc.product(d["product_url"])
                     s = evaluate("PriceCharting Marketplace", o["card"], o["set"], d["grader"], grade, o["price"],
-                                 o["offer_url"], prod, cfg, {"cert": d["cert"], "price_includes_shipping": o["shipping_included"], "comps_url": d["product_url"]})
+                                 o["offer_url"], prod, cfg, {"cert": d["cert"], "price_includes_shipping": o["shipping_included"], "comps_url": d["product_url"]}, pcm.variant_from_label(o["label"]))
                     if s: steals.append(s)
                 except Exception as e:
                     print("offer error", o["offer_url"], e, file=sys.stderr)
@@ -86,7 +86,7 @@ def write_site(out, steals, status, cfg):
     (out / "steals.json").write_text(json.dumps(doc, indent=2))
     e = html.escape
     rows = "".join(
-        f"<tr><td>{e(s['card'])}</td><td>{e(s['set'])}</td><td>{e(str(s['grade']).removesuffix('.0'))}</td><td>{e(s['grader'])}</td>"
+        f"<tr><td>{e(s['card'])}</td><td>{e(s['set'])}</td><td>{e(str(s['grade']).removesuffix('.0'))}{' ' + e(s['variant']) if s.get('variant') else ''}</td><td>{e(s['grader'])}</td>"
         f"<td>{'' if s['pop'] is None else s['pop']}</td><td>${s['list_price']:,.2f}</td><td title=\"{e(s['fair_value_basis'])}\">${s['fair_value']:,.2f}</td>"
         f"<td><b>{s['discount_pct']}%</b><br><span class=m>{e(s['confidence'])}</span></td><td>{e(s['source'])}</td><td><a href=\"{e(s['link'])}\" target=_blank>listing</a>"
         f"{' · <a href=%s target=_blank>comps</a>' % e(s['comps_url']) if s.get('comps_url') else ''}</td></tr>" for s in steals) or \
@@ -96,7 +96,7 @@ def write_site(out, steals, status, cfg):
     (out / "index.html").write_text(f"""<!doctype html><html><head><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1">
 <title>Pokemon Graded +EV Steals</title><style>body{{font-family:system-ui,sans-serif;margin:16px;background:#111;color:#eee}}table{{border-collapse:collapse;width:100%;font-size:14px}}
 td,th{{border-bottom:1px solid #333;padding:6px;text-align:left}}th{{background:#222;position:sticky;top:0}}a{{color:#6cf}}.m{{color:#aaa;font-size:13px}}</style></head><body>
-<h1>Pokemon Graded +EV Steals</h1><p class=m>Updated {now.astimezone(ET):%Y-%m-%d %I:%M %p} ET · {len(steals)} steals · grades {c['min_grade']}-{c['max_grade']}, pop &le; {c['max_pop']} (PSA/CGC where known),
+<h1>Pokemon Graded +EV Steals</h1><p class=m>Updated {now.astimezone(ET):%Y-%m-%d %I:%M %p} ET · {len(steals)} steals · grades {c['min_grade']}-{c['max_grade']}, pop &le; {c['max_pop']} (PSA/CGC where known; filter skipped when unknown),
 &ge;{c['min_discount_pct']}% below fair value, fair value &ge; ${c['min_fair_value']} · <a href=steals.json>steals.json</a></p>
 <div style="overflow-x:auto"><table><tr><th>Card</th><th>Set</th><th>Grade</th><th>Grader</th><th>Pop</th><th>List</th><th>Est. fair</th><th>Discount</th><th>Source</th><th>Link</th></tr>{rows}</table></div>
 <p class=m>Fair value = median of recent same-grader same-grade eBay sold comps (via PriceCharting); else PriceCharting grade guide &times; grader haircut (hover the value for its basis). Pop = PSA/CGC population from PriceCharting. Always verify the card, variant, and slab before buying.</p>

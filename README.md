@@ -1,6 +1,6 @@
 # Pokemon graded-card +EV steal scanner
 
-Finds graded Pokemon cards (grades 1-8, low pop) listed well below fair value. Runs every 3 hours via GitHub Actions and publishes
+Finds graded Pokemon cards (grades 1-10 incl. half grades, 9.5, and 10 variants such as CGC Pristine / BGS Black Label, low pop) listed well below fair value. Runs every 3 hours via GitHub Actions and publishes
 https://jonesmgabe.github.io/pokemon-ev-scanner/ plus `steals.json` (stable `id` per listing+price, for new-item alerts).
 
 - Listings: PriceCharting Marketplace (public pages), eBay Browse API (optional: add `EBAY_CLIENT_ID` / `EBAY_CLIENT_SECRET` repo secrets from a free developer.ebay.com app; searches the `ebay_watchlist` cards in config.json).

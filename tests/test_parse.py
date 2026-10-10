@@ -6,9 +6,19 @@ class T(unittest.TestCase):
     def test_label(self): self.assertEqual(grade_from_label("Graded 7"), 7.0)
     def test_ebay(self): self.assertEqual(parse_grade("Charizard PSA 7 NM Base"), ("PSA", 7.0))
     def test_fv(self):
-        prod = {"guide": {"7": 100.0}, "pop": {"psa": [0]*6 + [12, 0, 0, 0]}, "comps": {"cib": [
+        prod = {"guide": {"7": 100.0}, "pop": {"psa": [0]*6 + [12, 0, 0, 0]}, "comps": {"Grade 7": [
             {"date": "2026-01-01", "title": "X PSA 7", "price": 80}, {"date": "2026-01-02", "title": "X PSA 7", "price": 90},
             {"date": "2026-01-03", "title": "X CGC 7", "price": 50}]}}
         self.assertEqual(fair_value(prod, 7.0, "PSA", CFG)[0], 85)
         self.assertEqual(fair_value(prod, 7.0, "CGC", CFG)[0], 80)
         self.assertEqual(pop_for(prod, 7.0, "PSA"), 12); self.assertIsNone(pop_for(prod, 8.0, "PSA"))
+class T2(unittest.TestCase):
+    def test_half_and_ten(self):
+        from scanner.pricecharting import variant_from_label
+        prod = {"guide": {"Grade 8": 100.0, "CGC 10 Pristine": 500.0}, "pop": {}, "comps": {"Grade 8": [
+            {"date": "2026-01-01", "title": "X PSA 8.5", "price": 150}, {"date": "2026-01-02", "title": "X PSA 8.5", "price": 170},
+            {"date": "2026-01-03", "title": "X PSA 8", "price": 99}], "CGC 10 Pristine": []}}
+        self.assertEqual(fair_value(prod, 8.5, "PSA", CFG)[0], 160)
+        self.assertEqual(fair_value(prod, 10.0, "CGC", CFG, "Pristine")[0], 500.0)
+        self.assertEqual(grade_from_label("CGC 10 Pristine"), 10.0); self.assertEqual(variant_from_label("BGS 10 Black"), "Black")
+if __name__ == "__main__": unittest.main()

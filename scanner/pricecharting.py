@@ -9,9 +9,6 @@ import requests
 
 BASE = "https://www.pricecharting.com"
 UA = "Mozilla/5.0 (compatible; pokemon-ev-scanner/1.0; +https://jonesmgabe.github.io/pokemon-ev-scanner/)"
-# completed-sales tab per grade (verified against the Full Price Guide values)
-GRADE_TAB = {1: "loose-and-box", 2: "box-and-manual", 3: "grade-three", 4: "grade-four",
-             5: "grade-five", 6: "grade-six", 7: "cib", 8: "new", 9: "graded"}
 GRADERS = ["PSA", "CGC", "BGS", "SGC", "TAG", "ACE", "HGA", "BECKETT"]
 
 
@@ -65,50 +62,83 @@ class PC:
         i = h.find('id="full-prices"')
         if i > 0:
             txt = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", h[i:i + 6000]))
-            for g, v in re.findall(r"Grade (\d(?:\.5)?) \$([\d,]+\.\d\d)", txt):
-                guide[g] = _f(v)
+            for lab, v in re.findall(r"((?:Grade \d(?:\.5)?)|(?:[A-Z]{3} 10(?: Black| Pristine)?)) \$([\d,]+\.\d\d)", txt):
+                guide[norm_label(lab)] = _f(v)
+        # Tab ids are reused generically across PriceCharting categories, so map them
+        # from the visible dropdown labels on each page (e.g. "PSA 10 (30)").
+        labels = {k: norm_label(v) for k, v in re.findall(r'<option[^>]*value="completed-auctions-([a-z-]+)"[^>]*>([^<(]*)', h)}
+        # Split at every tab div so an empty tab (no table) never swallows its neighbour's rows.
+        parts = re.split(r'<div class="completed-auctions-([a-z0-9-]+)[^"]*"[^>]*>', h)
         comps = {}
-        for tab, body in re.findall(r'<div class="completed-auctions-([a-z0-9-]+)[^"]*"[^>]*>(.*?)</table>', h, re.S):
+        for tab, body in zip(parts[1::2], parts[2::2]):
+            body = body.split("</table>")[0] if "<table" in body.split('<div class="completed-auctions-')[0] else ""
             rows = []
             for r in re.findall(r'<tr id="ebay-[^"]*">(.*?)</tr>', body, re.S):
                 d = re.search(r'<td class="date">([^<]+)</td>', r)
-                t = re.search(r'<td class="title">.*?<a[^>]*>(.*?)</a>', r, re.S)
+                t = re.search(r'<a[^>]*class="js-ebay-completed-sale"[^>]*>(.*?)</a>', r, re.S) or re.search(r'<td class="title">.*?<a[^>]*>(.*?)</a>', r, re.S)
                 p = re.search(r'class="js-price"[^>]*>\s*\$([\d,]+\.\d\d)', r)
                 if d and p:
                     rows.append({"date": d.group(1).strip(), "title": html.unescape(re.sub(r"\s+", " ", re.sub(r"<[^>]+>", "", t.group(1))).strip()) if t else "", "price": _f(p.group(1))})
-            comps[tab] = rows
+            if tab in labels: comps[labels[tab]] = rows
         return {"pop": pop, "guide": guide, "comps": comps}
 
 
+def norm_label(lab):
+    lab = re.sub(r"\s+", " ", lab).strip().replace("Prist.", "Pristine")
+    return lab
+
+
 def grade_from_label(label):
-    m = re.search(r"(\d+(?:\.5)?)\s*$", label or "")
+    m = re.search(r"(\d+(?:\.5)?)(?:\s+(?:Pristine|Black))?\s*$", label or "")
     return float(m.group(1)) if m else None
 
 
-def fair_value(prod, grade, grader, cfg):
-    """Median of recent same-grade, same-grader sold comps; falls back to the
-    PriceCharting guide (an all-grader blend of solds) times a grader haircut."""
-    if grade != int(grade): return None, "half grade: no comps tab", 0
-    g = int(grade)
-    rows = prod["comps"].get(GRADE_TAB.get(g, ""), [])
+def variant_from_label(label):
+    l = (label or "").lower()
+    return "Pristine" if "pristine" in l else "Black" if "black" in l else ""
+
+
+def _gs(grade):
+    return str(int(grade)) if grade == int(grade) else str(grade)
+
+
+def fair_value(prod, grade, grader, cfg, variant=""):
+    """Median of recent same-grader, same-grade sold comps (PriceCharting's eBay
+    completed sales); fallback = PriceCharting guide (x grader haircut for the
+    all-grader 1-9.5 guides). Half grades other than 9.5 have no own tab or guide:
+    they are valued only from exact-grade comps inside the whole-grade tab."""
     cutoff = (date.today() - timedelta(days=cfg["comp_max_age_days"])).isoformat()
-    rows = [r for r in rows if r["date"] >= cutoff]
     gr = grader if grader in GRADERS else None
-    same = [r for r in rows if gr and re.search(rf"\b{gr}\s*{g}\b", r["title"].upper())]
-    same = same[: cfg["comp_sample"]]
+    if grade == 10:
+        if not gr: return None, "no value data", 0
+        lab = f"{gr} 10" + (f" {variant}" if variant else "")
+        rows = [r for r in prod["comps"].get(lab, []) if r["date"] >= cutoff][: cfg["comp_sample"]]
+        if len(rows) >= cfg["min_comps"]:
+            return round(statistics.median(r["price"] for r in rows), 2), f"high: median of {len(rows)} {lab} sold comps", len(rows)
+        gv = prod["guide"].get(lab)
+        if gv:
+            return gv, ("medium: " if rows else "low: ") + f"PriceCharting {lab} guide; {len(rows)} recent solds", len(rows)
+        return None, "no value data", 0
+    gs = _gs(grade)
+    tab = f"Grade {gs}" if grade in (9.5,) or grade == int(grade) else f"Grade {int(grade)}"
+    rows = [r for r in prod["comps"].get(tab, []) if r["date"] >= cutoff]
+    pat = re.compile(rf"\b{gr}\s*(?:[A-Z-]+\s+)?{re.escape(gs)}(?![.\d])") if gr else None
+    same = [r for r in rows if pat and pat.search(r["title"].upper().replace("BECKETT", "BGS"))][: cfg["comp_sample"]]
     if len(same) >= cfg["min_comps"]:
-        return round(statistics.median(r["price"] for r in same), 2), f"high: median of {len(same)} {gr} {g} sold comps", len(same)
-    gv = prod["guide"].get(str(g))
+        return round(statistics.median(r["price"] for r in same), 2), f"high: median of {len(same)} {gr} {gs} sold comps", len(same)
+    gv = prod["guide"].get(f"Grade {gs}")
     if gv:
         hc = cfg["grader_guide_haircut"].get(grader, cfg["grader_guide_haircut"]["OTHER"])
-        return round(gv * hc, 2), ("medium: " if len(rows) >= cfg["min_comps"] else "low: ") + f"PriceCharting Grade {g} guide x{hc} ({grader or 'unknown'} haircut); {len(rows)} recent grade-{g} solds", len(rows)
-    return None, "no value data", 0
+        return round(gv * hc, 2), ("medium: " if len(rows) >= cfg["min_comps"] else "low: ") + f"PriceCharting Grade {gs} guide x{hc} ({grader or 'unknown'} haircut); {len(rows)} recent grade-{gs} solds", len(rows)
+    return None, f"no value data ({len(same)} exact {gs} comps)", 0
 
 
-def pop_for(prod, grade, grader):
+def pop_for(prod, grade, grader, variant=""):
+    """PSA/CGC pop by whole grade (PriceCharting has no half-grade or
+    Pristine/Black-Label split, so those return None)."""
     key = {"PSA": "psa", "CGC": "cgc"}.get(grader)
     arr = prod["pop"].get(key) if key else None
-    if not arr or grade != int(grade) or not (1 <= grade <= len(arr)): return None
+    if variant or not arr or grade != int(grade) or not (1 <= grade <= len(arr)): return None
     v = arr[int(grade) - 1]
     return v or None  # 0 = PriceCharting has no pop data for this grade, not a true zero
 
